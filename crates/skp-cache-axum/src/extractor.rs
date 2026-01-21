@@ -1,5 +1,4 @@
 use axum::{
-    async_trait,
     extract::{FromRequestParts, FromRef},
     http::request::Parts,
 };
@@ -13,7 +12,6 @@ where
     S: Serializer,
     M: CacheMetrics;
 
-#[async_trait]
 impl<State, B, S, M> FromRequestParts<State> for Cache<B, S, M>
 where
     B: CacheBackend + DependencyBackend + Clone + Send + Sync + 'static,

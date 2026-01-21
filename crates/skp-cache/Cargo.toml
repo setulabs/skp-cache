@@ -30,3 +30,11 @@ dashmap.workspace = true
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 serde = { workspace = true }
+
+[[example]]
+name = "redis_backend"
+required-features = ["redis"]
+
+[[example]]
+name = "multi_tier"
+required-features = ["multitier"]
