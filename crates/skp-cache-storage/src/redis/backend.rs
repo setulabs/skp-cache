@@ -5,7 +5,7 @@ use redis::{AsyncCommands, Value};
 use std::sync::Arc;
 use parking_lot::RwLock as SyncRwLock;
 use skp_cache_core::{
-    CacheBackend, CacheEntry, CacheError, CacheOptions, CacheStats, Result, TaggableBackend,
+    CacheBackend, CacheEntry, CacheError, CacheOptions, CacheStats, DependencyBackend, Result, TaggableBackend,
 };
 use std::time::SystemTime;
 
@@ -52,6 +52,14 @@ impl RedisBackend {
         match &self.config.key_prefix {
             Some(prefix) => format!("{}:__tags__:{}", prefix, tag),
             None => format!("__tags__:{}", tag),
+        }
+    }
+
+    /// Get dependency key
+    fn dep_key(&self, dep: &str) -> String {
+        match &self.config.key_prefix {
+            Some(prefix) => format!("{}:__deps__:{}", prefix, dep),
+            None => format!("__deps__:{}", dep),
         }
     }
 
@@ -129,14 +137,17 @@ impl CacheBackend for RedisBackend {
              pipe.set(&prefixed, &serialized);
         }
         
+        
         // Add to tags
         for tag in &options.tags {
             let tag_k = self.tag_key(tag);
             pipe.sadd(&tag_k, key);
-            // Optionally expire tag sets? 
-            // If we expire tag sets, we might lose tag tracking for other keys.
-            // Tag sets should probably not expire unless empty, but Redis doesn't support that easily.
-            // For now, we don't set TTL on tag sets.
+        }
+
+        // Add to dependencies
+        for dep in &options.dependencies {
+            let dep_k = self.dep_key(dep);
+            pipe.sadd(&dep_k, key);
         }
         
         pipe.query_async::<Vec<Value>>(&mut *conn).await
@@ -260,6 +271,11 @@ impl CacheBackend for RedisBackend {
             for tag in &options.tags {
                 let tag_k = self.tag_key(tag);
                 pipe.sadd(&tag_k, key);
+            }
+
+            for dep in &options.dependencies {
+                let dep_k = self.dep_key(dep);
+                pipe.sadd(&dep_k, key);
             }
         }
         
@@ -397,5 +413,18 @@ impl TaggableBackend for RedisBackend {
             
         self.stats.write().deletes += keys.len() as u64;
         Ok(keys.len() as u64)
+    }
+}
+
+#[async_trait]
+impl DependencyBackend for RedisBackend {
+    async fn get_dependents(&self, key: &str) -> Result<Vec<String>> {
+        let mut conn = self.get_connection().await?;
+        let dep_k = self.dep_key(key);
+        
+        let keys: Vec<String> = conn.smembers(&dep_k).await
+             .map_err(|e| CacheError::Backend(e.to_string()))?;
+             
+        Ok(keys)
     }
 }

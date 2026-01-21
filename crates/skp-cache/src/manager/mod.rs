@@ -2,11 +2,15 @@
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::collections::{HashSet, VecDeque};
 
 use skp_cache_core::{
     CacheBackend, CacheEntry, CacheKey, CacheMetrics, CacheOperation, CacheOptions,
-    CacheResult, CacheTier, JsonSerializer, NoopMetrics, Result, Serializer,
+    CacheResult, CacheTier, DependencyBackend, JsonSerializer, NoopMetrics, Result, Serializer,
 };
+
+mod coalescer;
+use coalescer::Coalescer;
 
 /// Configuration for CacheManager
 #[derive(Debug, Clone)]
@@ -61,7 +65,7 @@ impl CacheManagerConfig {
 /// - `M`: The metrics collector
 pub struct CacheManager<B, S = JsonSerializer, M = NoopMetrics>
 where
-    B: CacheBackend,
+    B: CacheBackend + DependencyBackend,
     S: Serializer,
     M: CacheMetrics,
 {
@@ -69,10 +73,11 @@ where
     serializer: Arc<S>,
     metrics: Arc<M>,
     config: CacheManagerConfig,
+    coalescer: Coalescer,
 }
 
 // Constructors for default serializer/metrics
-impl<B: CacheBackend> CacheManager<B, JsonSerializer, NoopMetrics> {
+impl<B: CacheBackend + DependencyBackend> CacheManager<B, JsonSerializer, NoopMetrics> {
     /// Create a new CacheManager with default JSON serializer and no metrics
     pub fn new(backend: B) -> Self {
         Self::with_config(backend, CacheManagerConfig::default())
@@ -85,6 +90,7 @@ impl<B: CacheBackend> CacheManager<B, JsonSerializer, NoopMetrics> {
             serializer: Arc::new(JsonSerializer),
             metrics: Arc::new(NoopMetrics),
             config,
+            coalescer: Coalescer::new(),
         }
     }
 }
@@ -92,7 +98,7 @@ impl<B: CacheBackend> CacheManager<B, JsonSerializer, NoopMetrics> {
 // Full generic implementation
 impl<B, S, M> CacheManager<B, S, M>
 where
-    B: CacheBackend,
+    B: CacheBackend + DependencyBackend,
     S: Serializer,
     M: CacheMetrics,
 {
@@ -108,6 +114,7 @@ where
             serializer: Arc::new(serializer),
             metrics: Arc::new(metrics),
             config,
+            coalescer: Coalescer::new(),
         }
     }
 
@@ -139,7 +146,15 @@ where
         let full_key = self.full_key(&key.full_key());
         let start = Instant::now();
 
-        let result = match self.backend.get(&full_key).await? {
+        // Use coalescer to prevent thundering herd
+        let backend = self.backend.clone();
+        let key_clone = full_key.clone();
+
+        let req_result = self.coalescer.do_request(&full_key, move || async move {
+            backend.get(&key_clone).await
+        }).await?;
+
+        let result = match req_result {
             Some(entry) => {
                 if entry.is_expired() && !entry.is_stale() {
                     self.metrics.record_miss(&full_key);
@@ -174,17 +189,7 @@ where
         T: serde::Serialize,
     {
         let full_key = self.full_key(&key.full_key());
-        let mut options = options.into();
-
-        // Apply default TTL if not specified
-        if options.ttl.is_none() {
-            options.ttl = self.config.default_ttl;
-        }
-
-        // Apply jitter to prevent thundering herd
-        if let Some(ttl) = options.ttl {
-            options.ttl = Some(self.apply_ttl_jitter(ttl));
-        }
+        let options = options.into();
 
         // Serialize
         let serialize_start = Instant::now();
@@ -192,23 +197,156 @@ where
         self.metrics
             .record_latency(CacheOperation::Serialize, serialize_start.elapsed());
 
+        self.set_raw(&full_key, serialized, options).await
+    }
+
+    /// Internal set with full logic (jitter, cascade, metrics)
+    async fn set_raw(&self, full_key: &str, value: Vec<u8>, mut options: CacheOptions) -> Result<()> {
+        // Apply default TTL if not specified
+        if options.ttl.is_none() {
+            options.ttl = self.config.default_ttl;
+        }
+
+        // Apply jitter
+        if let Some(ttl) = options.ttl {
+            options.ttl = Some(self.apply_ttl_jitter(ttl));
+        }
+
+        // Get dependents for cascade invalidation BEFORE setting
+        // (Assuming existing key's dependents might need invalidation if value changes?)
+        // Actually, usually dependents depend on the VALUE or the KEY existence.
+        // If we update the value, dependents are likely stale.
+        let dependents = self.backend.get_dependents(full_key).await.unwrap_or_default();
+
         // Store
         let set_start = Instant::now();
-        self.backend.set(&full_key, serialized, &options).await?;
+        self.backend.set(full_key, value, &options).await?;
         self.metrics
             .record_latency(CacheOperation::Set, set_start.elapsed());
+            
+        // Cascade invalidation
+        for dep in dependents {
+             let _ = self.invalidate_recursive(&dep).await;
+        }
 
         Ok(())
     }
 
-    /// Delete a key from cache
+    /// Get a value from cache, or compute it if missing (coalesced)
+    pub async fn get_or_compute<T, F, Fut>(
+        &self,
+        key: impl CacheKey,
+        computer: F,
+        options: Option<CacheOptions>,
+    ) -> Result<CacheResult<T>>
+    where
+        T: serde::Serialize + serde::de::DeserializeOwned + Send + 'static,
+        F: FnOnce() -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<T>> + Send + 'static,
+    {
+        let full_key = self.full_key(&key.full_key());
+        let backend = self.backend.clone();
+        let key_str = full_key.clone();
+        let opts = options.unwrap_or_default();
+        let manager = self.clone();
+        
+        // Coalesce the request
+        let req_result = self.coalescer.do_request(&full_key, move || async move {
+             // 1. Check Backend
+             if let Some(entry) = backend.get(&key_str).await? {
+                 if !entry.is_expired() {
+                      return Ok(Some(entry));
+                 }
+                 
+                 // SWR Logic: If stale, trigger background refresh
+                 if entry.is_stale() {
+                      let manager_bg = manager.clone();
+                      let key_bg = key_str.clone();
+                      let opts_bg = opts.clone();
+                      
+                      manager.coalescer.try_spawn_refresh(&key_str, move || async move {
+                           if let Ok(val) = computer().await {
+                                // Serialize depends on T. We need T to serialize!
+                                // Manager has serializer.
+                                // We call set_internal (set_raw).
+                                // But set_raw expects Vec<u8>.
+                                // CacheManager has serializer.
+                                // But `computer` returns T.
+                                // We need to serialize T.
+                                // `manager_bg.serializer.serialize(&val)`.
+                                if let Ok(serialized) = manager_bg.serializer.serialize(&val) {
+                                     let _ = manager_bg.set_raw(&key_bg, serialized, opts_bg).await;
+                                }
+                           }
+                      });
+                      
+                      return Ok(Some(entry));
+                 }
+             }
+             
+             // 2. Compute (Miss case)
+             let val = computer().await?;
+             let serialized = manager.serializer.serialize(&val)?;
+             let size = serialized.len();
+             
+             // 3. Set (using set_raw for full logic)
+             manager.set_raw(&key_str, serialized.clone(), opts).await?;
+             
+             Ok(Some(CacheEntry::new(serialized, size)))
+        }).await?;
+
+        match req_result {
+            Some(entry) => {
+                if entry.is_stale() {
+                    Ok(CacheResult::Stale(self.deserialize_entry(entry)?))
+                } else {
+                    Ok(CacheResult::Hit(self.deserialize_entry(entry)?))
+                }
+            },
+            None => Err(skp_cache_core::CacheError::Internal("Compute returned None".into()))
+        }
+    }
+
+    /// Delete a key from cache (with cascade invalidation)
     pub async fn delete(&self, key: impl CacheKey) -> Result<bool> {
         let full_key = self.full_key(&key.full_key());
         let start = Instant::now();
-        let result = self.backend.delete(&full_key).await?;
+        
+        // Use recursive invalidation
+        let result = self.invalidate_recursive(&full_key).await?;
+        
         self.metrics
             .record_latency(CacheOperation::Delete, start.elapsed());
         Ok(result)
+    }
+
+    /// Recursive invalidation of dependents
+    async fn invalidate_recursive(&self, key: &str) -> Result<bool> {
+        let mut queue = VecDeque::new();
+        queue.push_back(key.to_string());
+        let mut visited = HashSet::new();
+        visited.insert(key.to_string());
+        
+        let mut initial_deleted = false;
+        let mut first = true;
+        
+        while let Some(k) = queue.pop_front() {
+             // Get dependents first
+             if let Ok(deps) = self.backend.get_dependents(&k).await {
+                  for dep in deps {
+                      if visited.insert(dep.clone()) {
+                          queue.push_back(dep);
+                      }
+                  }
+             }
+             // Delete
+             let deleted = self.backend.delete(&k).await?;
+             if first {
+                 initial_deleted = deleted;
+                 first = false;
+             }
+        }
+        Ok(initial_deleted)
     }
 
     /// Check if key exists in cache
@@ -266,7 +404,7 @@ where
 
 impl<B, S, M> Clone for CacheManager<B, S, M>
 where
-    B: CacheBackend,
+    B: CacheBackend + DependencyBackend,
     S: Serializer,
     M: CacheMetrics,
 {
@@ -276,6 +414,7 @@ where
             serializer: self.serializer.clone(),
             metrics: self.metrics.clone(),
             config: self.config.clone(),
+            coalescer: self.coalescer.clone(),
         }
     }
 }

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use skp_cache_core::{
-    CacheBackend, CacheEntry, CacheError, CacheOptions, CacheStats, Result, TaggableBackend,
+    CacheBackend, CacheEntry, CacheError, CacheOptions, CacheStats, DependencyBackend, Result, TaggableBackend,
 };
 use super::circuit_breaker::CircuitBreaker;
 
@@ -347,6 +347,18 @@ where
                 Err(e)
              }
         }
+    }
+}
+
+#[async_trait]
+impl<L1, L2> DependencyBackend for MultiTierBackend<L1, L2>
+where
+    L1: CacheBackend,
+    L2: DependencyBackend,
+{
+    async fn get_dependents(&self, key: &str) -> Result<Vec<String>> {
+        // Proxy to L2 (source of truth)
+        self.l2.get_dependents(key).await
     }
 }
 

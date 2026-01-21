@@ -74,6 +74,15 @@ pub trait TaggableBackend: CacheBackend {
     async fn delete_by_tag(&self, tag: &str) -> Result<u64, CacheError>;
 }
 
+/// Extended trait for backends that support dependency tracking
+#[async_trait]
+pub trait DependencyBackend: CacheBackend {
+    /// Get keys that depend on the given key
+    /// 
+    /// If key `A` depends on key `B`, then `get_dependents("B")` should return `["A"]`.
+    async fn get_dependents(&self, key: &str) -> Result<Vec<String>, CacheError>;
+}
+
 /// Extended trait for distributed backends
 #[async_trait]
 pub trait DistributedBackend: CacheBackend {

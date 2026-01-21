@@ -25,6 +25,7 @@ skp-cache-storage.workspace = true
 tokio.workspace = true
 rand.workspace = true
 serde.workspace = true
+dashmap.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }

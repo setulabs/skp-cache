@@ -651,6 +651,7 @@ checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
 name = "skp-cache"
 version = "0.1.0"
 dependencies = [
+ "dashmap",
  "rand",
  "serde",
  "skp-cache-core",

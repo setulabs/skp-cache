@@ -5,7 +5,7 @@ mod key;
 mod metrics;
 mod serializer;
 
-pub use backend::{CacheBackend, DistributedBackend, TaggableBackend};
+pub use backend::{CacheBackend, DependencyBackend, DistributedBackend, TaggableBackend};
 pub use key::{CacheKey, CompositeKey};
 pub use metrics::{CacheMetrics, CacheOperation, CacheTier, EvictionReason, NoopMetrics};
 pub use serializer::{JsonSerializer, Serializer};

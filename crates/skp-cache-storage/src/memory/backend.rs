@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use skp_cache_core::{CacheBackend, CacheEntry, CacheOptions, CacheStats, Result, TaggableBackend};
+use skp_cache_core::{CacheBackend, CacheEntry, CacheOptions, CacheStats, DependencyBackend, Result, TaggableBackend};
 
 use super::ttl_index::TtlIndex;
 
@@ -66,6 +66,8 @@ struct MemoryStats {
 
 /// Tag index for tag-based lookups
 type TagIndex = DashMap<String, HashSet<String>>;
+/// Dependency index for dependency-based invalidation (Dependency -> Dependent Keys)
+type DepIndex = DashMap<String, HashSet<String>>;
 
 /// In-memory cache backend
 ///
@@ -77,6 +79,8 @@ pub struct MemoryBackend {
     data: Arc<DashMap<String, CacheEntry<Vec<u8>>>>,
     /// Tag -> keys index
     tag_index: Arc<TagIndex>,
+    /// Dependency -> keys index
+    dep_index: Arc<DepIndex>,
     /// TTL expiration index
     ttl_index: Arc<RwLock<TtlIndex>>,
     /// Statistics
@@ -93,6 +97,7 @@ impl MemoryBackend {
         Self {
             data: Arc::new(DashMap::with_capacity(config.max_capacity.min(10_000))),
             tag_index: Arc::new(DashMap::new()),
+            dep_index: Arc::new(DashMap::new()),
             ttl_index: Arc::new(RwLock::new(ttl_index)),
             stats: Arc::new(RwLock::new(MemoryStats::default())),
             config,
@@ -140,6 +145,13 @@ impl MemoryBackend {
             for tag in &entry.tags {
                 if let Some(mut keys) = self.tag_index.get_mut(tag) {
                     keys.remove(key);
+                }
+            }
+
+            // Remove from dependency index
+            for dep in &entry.dependencies {
+                if let Some(mut dependents) = self.dep_index.get_mut(dep) {
+                    dependents.remove(key);
                 }
             }
         }
@@ -244,7 +256,25 @@ impl CacheBackend for MemoryBackend {
                 .insert(key.to_string());
         }
 
-        self.data.insert(key.to_string(), entry);
+        // Update dependency index
+        for dep in &options.dependencies {
+            self.dep_index
+                .entry(dep.clone())
+                .or_insert_with(HashSet::new)
+                .insert(key.to_string());
+        }
+
+        if let Some(old_entry) = self.data.insert(key.to_string(), entry) {
+            // Clean up old dependencies that are no longer present
+            for dep in old_entry.dependencies {
+                if !options.dependencies.contains(&dep) {
+                    if let Some(mut dependents) = self.dep_index.get_mut(&dep) {
+                        dependents.remove(key);
+                    }
+                }
+            }
+        }
+        
         self.stats.write().writes += 1;
 
         Ok(())
@@ -295,6 +325,7 @@ impl CacheBackend for MemoryBackend {
     async fn clear(&self) -> Result<()> {
         self.data.clear();
         self.tag_index.clear();
+        self.dep_index.clear();
         *self.ttl_index.write() = TtlIndex::new(Duration::from_secs(1), self.config.max_ttl);
         Ok(())
     }
@@ -345,6 +376,17 @@ impl TaggableBackend for MemoryBackend {
              Ok(count)
         } else {
              Ok(0)
+        }
+    }
+}
+
+#[async_trait]
+impl DependencyBackend for MemoryBackend {
+    async fn get_dependents(&self, key: &str) -> Result<Vec<String>> {
+        if let Some(dependents) = self.dep_index.get(key) {
+             Ok(dependents.iter().cloned().collect())
+        } else {
+             Ok(Vec::new())
         }
     }
 }
@@ -478,5 +520,38 @@ mod tests {
         assert!(results[0].is_some());
         assert!(results[1].is_some());
         assert!(results[2].is_none());
+    }
+
+    #[tokio::test]
+    async fn test_dependencies() {
+        use skp_cache_core::{DependencyBackend, CacheOptions};
+        let backend = MemoryBackend::new(MemoryConfig::default());
+        
+        let mut opts = CacheOptions::default();
+        opts.dependencies = vec!["dep1".to_string(), "dep2".to_string()];
+
+        backend.set("key1", b"val".to_vec(), &opts).await.unwrap();
+        
+        let deps1 = backend.get_dependents("dep1").await.unwrap();
+        assert!(deps1.contains(&"key1".to_string()));
+        
+        let deps2 = backend.get_dependents("dep2").await.unwrap();
+        assert!(deps2.contains(&"key1".to_string()));
+        
+        // Update
+        opts.dependencies = vec!["dep1".to_string(), "dep3".to_string()];
+        backend.set("key1", b"val".to_vec(), &opts).await.unwrap();
+        
+        // dep1: still has key1
+        // dep2: key1 removed
+        // dep3: key1 added
+        assert!(backend.get_dependents("dep1").await.unwrap().contains(&"key1".to_string()));
+        assert!(!backend.get_dependents("dep2").await.unwrap().contains(&"key1".to_string()));
+        assert!(backend.get_dependents("dep3").await.unwrap().contains(&"key1".to_string()));
+        
+        // Delete
+        backend.delete("key1").await.unwrap();
+        assert!(backend.get_dependents("dep1").await.unwrap().is_empty());
+        assert!(backend.get_dependents("dep3").await.unwrap().is_empty());
     }
 }
