@@ -76,11 +76,14 @@ impl Serializer for BincodeSerializer {
     }
 
     fn serialize<T: Serialize>(&self, value: &T) -> Result<Vec<u8>, CacheError> {
-        bincode::serialize(value).map_err(|e| CacheError::Serialization(e.to_string()))
+        bincode::serde::encode_to_vec(value, bincode::config::standard())
+            .map_err(|e| CacheError::Serialization(e.to_string()))
     }
 
     fn deserialize<T: DeserializeOwned>(&self, bytes: &[u8]) -> Result<T, CacheError> {
-        bincode::deserialize(bytes).map_err(|e| CacheError::Deserialization(e.to_string()))
+        let (val, _len) = bincode::serde::decode_from_slice(bytes, bincode::config::standard())
+            .map_err(|e| CacheError::Deserialization(e.to_string()))?;
+        Ok(val)
     }
 }
 
