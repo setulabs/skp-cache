@@ -4,6 +4,8 @@ members = [
     "crates/skp-cache-core",
     "crates/skp-cache-storage",
     "crates/skp-cache",
+    "crates/skp-cache-http",
+    "crates/skp-cache-axum",
 ]
 
 [workspace.package]
@@ -51,3 +53,6 @@ tokio-test = "0.4"
 # Internal crates
 skp-cache-core = { path = "crates/skp-cache-core" }
 skp-cache-storage = { path = "crates/skp-cache-storage" }
+skp-cache-http = { path = "crates/skp-cache-http" }
+skp-cache-axum = { path = "crates/skp-cache-axum" }
+skp-cache = { path = "crates/skp-cache" }
