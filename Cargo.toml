@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/skp-cache-core",
+    "crates/skp-cache-storage",
+    "crates/skp-cache",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Setu Labs"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/setulabs/skp-cache"
+keywords = ["cache", "redis", "async", "caching"]
+categories = ["caching", "asynchronous"]
+
+[workspace.dependencies]
+# Core dependencies (latest versions as of Jan 2026)
+async-trait = "0.1.86"
+thiserror = "2.0"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.137"
+
+# Optional serializers
+rmp-serde = "1.3"
+bincode = "1.3"
+
+# Memory backend
+dashmap = "6.1"
+parking_lot = "0.12"
+
+# Async runtime
+tokio = { version = "1.43", features = ["sync", "time", "rt"] }
+
+# Utilities
+rand = "0.8"
+
+# Metrics
+metrics = "0.24"
+
+# Testing
+tokio-test = "0.4"
+
+# Internal crates
+skp-cache-core = { path = "crates/skp-cache-core" }
+skp-cache-storage = { path = "crates/skp-cache-storage" }

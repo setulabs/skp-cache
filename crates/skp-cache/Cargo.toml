@@ -1,0 +1,29 @@
+[package]
+name = "skp-cache"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Advanced, modular caching library for Rust"
+keywords = ["cache", "redis", "async", "caching", "memory"]
+categories = ["caching", "asynchronous"]
+readme = "../../README.md"
+
+[features]
+default = ["memory", "json"]
+memory = ["skp-cache-storage/memory"]
+json = ["skp-cache-core/json"]
+msgpack = ["skp-cache-core/msgpack"]
+bincode = ["skp-cache-core/bincode"]
+metrics = ["skp-cache-core/metrics"]
+
+[dependencies]
+skp-cache-core.workspace = true
+skp-cache-storage.workspace = true
+tokio.workspace = true
+rand.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+serde = { workspace = true }
