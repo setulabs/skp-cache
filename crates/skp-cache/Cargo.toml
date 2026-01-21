@@ -12,6 +12,8 @@ readme = "../../README.md"
 [features]
 default = ["memory", "json"]
 memory = ["skp-cache-storage/memory"]
+redis = ["skp-cache-storage/redis"]
+multitier = ["skp-cache-storage/multitier"]
 json = ["skp-cache-core/json"]
 msgpack = ["skp-cache-core/msgpack"]
 bincode = ["skp-cache-core/bincode"]

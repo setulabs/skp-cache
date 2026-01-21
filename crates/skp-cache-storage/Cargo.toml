@@ -11,6 +11,8 @@ categories = ["caching"]
 [features]
 default = ["memory"]
 memory = ["dashmap", "parking_lot"]
+redis = ["dep:redis", "dep:bb8", "dep:bb8-redis"]
+multitier = []
 
 [dependencies]
 skp-cache-core.workspace = true
@@ -20,6 +22,13 @@ tokio.workspace = true
 # Memory backend
 dashmap = { workspace = true, optional = true }
 parking_lot = { workspace = true, optional = true }
+
+# Redis backend
+redis = { workspace = true, optional = true }
+bb8 = { workspace = true, optional = true }
+bb8-redis = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros", "time"] }

@@ -39,6 +39,12 @@ pub use skp_cache_core::*;
 #[cfg(feature = "memory")]
 pub use skp_cache_storage::{MemoryBackend, MemoryConfig};
 
+#[cfg(feature = "redis")]
+pub use skp_cache_storage::{RedisBackend, RedisConfig};
+
+#[cfg(feature = "multitier")]
+pub use skp_cache_storage::{MultiTierBackend, CircuitBreaker};
+
 // Export manager
 pub use manager::{CacheManager, CacheManagerConfig};
 
@@ -51,6 +57,12 @@ pub mod prelude {
 
     #[cfg(feature = "memory")]
     pub use crate::{MemoryBackend, MemoryConfig};
+
+    #[cfg(feature = "redis")]
+    pub use crate::{RedisBackend, RedisConfig};
+
+    #[cfg(feature = "multitier")]
+    pub use crate::{MultiTierBackend, CircuitBreaker};
 
     #[cfg(feature = "msgpack")]
     pub use crate::MsgPackSerializer;

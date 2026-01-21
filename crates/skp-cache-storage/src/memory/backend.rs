@@ -4,9 +4,10 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use skp_cache_core::{CacheBackend, CacheEntry, CacheOptions, CacheStats, Result};
+use skp_cache_core::{CacheBackend, CacheEntry, CacheOptions, CacheStats, Result, TaggableBackend};
 
 use super::ttl_index::TtlIndex;
 
@@ -69,15 +70,17 @@ type TagIndex = DashMap<String, HashSet<String>>;
 /// In-memory cache backend
 ///
 /// Uses `DashMap` for concurrent access and `TtlIndex` for efficient expiration.
+/// Cloning creates a new handle to the SAME underlying store.
+#[derive(Clone)]
 pub struct MemoryBackend {
     /// Main data store
-    data: DashMap<String, CacheEntry<Vec<u8>>>,
+    data: Arc<DashMap<String, CacheEntry<Vec<u8>>>>,
     /// Tag -> keys index
-    tag_index: TagIndex,
+    tag_index: Arc<TagIndex>,
     /// TTL expiration index
-    ttl_index: RwLock<TtlIndex>,
+    ttl_index: Arc<RwLock<TtlIndex>>,
     /// Statistics
-    stats: RwLock<MemoryStats>,
+    stats: Arc<RwLock<MemoryStats>>,
     /// Configuration
     config: MemoryConfig,
 }
@@ -88,10 +91,10 @@ impl MemoryBackend {
         let ttl_index = TtlIndex::new(Duration::from_secs(1), config.max_ttl);
 
         Self {
-            data: DashMap::with_capacity(config.max_capacity.min(10_000)),
-            tag_index: DashMap::new(),
-            ttl_index: RwLock::new(ttl_index),
-            stats: RwLock::new(MemoryStats::default()),
+            data: Arc::new(DashMap::with_capacity(config.max_capacity.min(10_000))),
+            tag_index: Arc::new(DashMap::new()),
+            ttl_index: Arc::new(RwLock::new(ttl_index)),
+            stats: Arc::new(RwLock::new(MemoryStats::default())),
             config,
         }
     }
@@ -315,12 +318,34 @@ impl CacheBackend for MemoryBackend {
     }
 }
 
-// Make MemoryBackend cloneable via Arc
-impl Clone for MemoryBackend {
-    fn clone(&self) -> Self {
-        // This creates a new backend, not a shared reference
-        // Use Arc<MemoryBackend> if you need shared access
-        Self::new(self.config.clone())
+
+
+#[async_trait]
+impl TaggableBackend for MemoryBackend {
+    async fn get_by_tag(&self, tag: &str) -> Result<Vec<String>> {
+        if let Some(keys) = self.tag_index.get(tag) {
+             Ok(keys.iter().cloned().collect())
+        } else {
+             Ok(Vec::new())
+        }
+    }
+
+    async fn delete_by_tag(&self, tag: &str) -> Result<u64> {
+        // We get the keys and remove the tag entry first
+        if let Some((_, keys)) = self.tag_index.remove(tag) {
+             let mut count = 0;
+             for key in keys {
+                 // Check if key exists (it might have been evicted)
+                 if self.data.contains_key(&key) {
+                     self.remove_entry(&key);
+                     self.stats.write().deletes += 1;
+                     count += 1;
+                 }
+             }
+             Ok(count)
+        } else {
+             Ok(0)
+        }
     }
 }
 
