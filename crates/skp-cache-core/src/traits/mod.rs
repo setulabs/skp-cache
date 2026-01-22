@@ -19,3 +19,8 @@ pub use serializer::BincodeSerializer;
 #[cfg(feature = "metrics")]
 pub use metrics::MetricsCrateAdapter;
 
+#[cfg(feature = "tracing")]
+mod tracing;
+#[cfg(feature = "tracing")]
+pub use tracing::TracingMetrics;
+

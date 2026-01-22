@@ -19,6 +19,8 @@ msgpack = ["skp-cache-core/msgpack"]
 bincode = ["skp-cache-core/bincode"]
 metrics = ["skp-cache-core/metrics"]
 compression = ["skp-cache-core/compression"]
+derive = ["dep:skp-cache-derive"]
+tracing = ["skp-cache-core/tracing"]
 
 [dependencies]
 skp-cache-core.workspace = true
@@ -27,11 +29,15 @@ tokio.workspace = true
 rand.workspace = true
 serde.workspace = true
 dashmap.workspace = true
+async-trait.workspace = true
+skp-cache-derive = { path = "../skp-cache-derive", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 serde = { workspace = true }
 criterion = "0.8.1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
 
 [[example]]
 name = "redis_backend"
@@ -40,6 +46,14 @@ required-features = ["redis"]
 [[example]]
 name = "multi_tier"
 required-features = ["multitier"]
+
+[[example]]
+name = "derive_key"
+required-features = ["derive"]
+
+[[example]]
+name = "tracing_integration"
+required-features = ["tracing"]
 
 [[bench]]
 name = "throughput"

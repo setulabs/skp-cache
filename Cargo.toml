@@ -5,7 +5,7 @@ members = [
     "crates/skp-cache-storage",
     "crates/skp-cache",
     "crates/skp-cache-http",
-    "crates/skp-cache-axum",
+    "crates/skp-cache-axum", "crates/skp-cache-derive",
 ]
 
 [workspace.package]

@@ -7,10 +7,17 @@ use std::collections::{HashSet, VecDeque};
 use skp_cache_core::{
     CacheBackend, CacheEntry, CacheKey, CacheMetrics, CacheOperation, CacheOptions,
     CacheResult, CacheTier, DependencyBackend, JsonSerializer, NoopMetrics, Result, Serializer,
+    TaggableBackend,
 };
 
 mod coalescer;
 use coalescer::Coalescer;
+
+mod read_through;
+pub use read_through::{Loader, ReadThroughCache, CacheManagerReadThroughExt};
+
+mod groups;
+pub use groups::CacheGroup;
 
 /// Configuration for CacheManager
 #[derive(Debug, Clone)]
@@ -116,6 +123,11 @@ where
             config,
             coalescer: Coalescer::new(),
         }
+    }
+
+    /// Create a namespaced cache group
+    pub fn group(&self, namespace: impl Into<String>) -> CacheGroup<'_, B, S, M> {
+        CacheGroup::new(self, namespace.into())
     }
 
     /// Get the full key with namespace prefix
@@ -435,5 +447,27 @@ where
             config: self.config.clone(),
             coalescer: self.coalescer.clone(),
         }
+    }
+}
+
+// Taggable operations
+impl<B, S, M> CacheManager<B, S, M>
+where
+    B: CacheBackend + DependencyBackend + TaggableBackend,
+    S: Serializer,
+    M: CacheMetrics,
+{
+    /// Delete all entries with a specific tag
+    pub async fn delete_by_tag(&self, tag: &str) -> Result<u64> {
+        let start = Instant::now();
+        let count = self.backend.delete_by_tag(tag).await?;
+        self.metrics
+            .record_latency(CacheOperation::Invalidate, start.elapsed());
+        Ok(count)
+    }
+
+    /// Get all keys by tag
+    pub async fn get_keys_by_tag(&self, tag: &str) -> Result<Vec<String>> {
+        self.backend.get_by_tag(tag).await
     }
 }

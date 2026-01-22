@@ -36,6 +36,7 @@ skp-cache = { version = "0.1", features = ["redis", "axum", "msgpack"] }
 | `json` | JSON serialization (default) |
 | `msgpack` | MessagePack serialization |
 | `bincode` | Bincode serialization |
+| `compression` | Zstd compression support |
 | `metrics` | Metrics crate integration |
 
 ## 🚀 Quick Start
@@ -165,6 +166,34 @@ cargo run -p skp-cache --example swr
 
 # Axum integration
 cargo run -p skp-cache-axum --example proper_axum
+```
+
+## 📈 Benchmarks
+
+Performance benchmarks for serialization, compression, and cache operations.
+
+### Quick Summary
+
+| Component | Recommendation | Performance |
+|-----------|----------------|-------------|
+| **Serializer** | Bincode | 2-3x faster than JSON |
+| **Compression** | Zstd L1 | 86% size reduction, ~3-11 µs overhead |
+| **Cache Hit** | Memory backend | ~700 ns (1.4M ops/s) |
+
+### Serialized Size Comparison
+
+| Format | Size | Reduction |
+|--------|------|-----------|
+| JSON | 15,172 B | - |
+| MsgPack | 13,564 B | 10.6% |
+| Bincode | 13,592 B | 10.4% |
+| JSON + Zstd | 2,069 B | **86.4%** |
+
+See [BENCHMARK.md](BENCHMARK.md) for detailed analysis and recommendations.
+
+```bash
+# Run all benchmarks
+cargo bench --all-features
 ```
 
 ## 🏗️ Architecture

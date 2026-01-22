@@ -45,14 +45,20 @@ pub use skp_cache_storage::{RedisBackend, RedisConfig};
 #[cfg(feature = "multitier")]
 pub use skp_cache_storage::{MultiTierBackend, CircuitBreaker};
 
+#[cfg(feature = "derive")]
+pub use skp_cache_derive::CacheKey;
+
 // Export manager
 pub use manager::{CacheManager, CacheManagerConfig};
+pub use manager::{Loader, ReadThroughCache, CacheManagerReadThroughExt};
+pub use manager::CacheGroup;
 
 /// Prelude for convenient imports
 pub mod prelude {
     pub use crate::{
         CacheError, CacheKey, CacheManager, CacheManagerConfig, CacheOpts, CacheResult,
-        JsonSerializer, Result, Serializer,
+        JsonSerializer, Result, Serializer, Loader, ReadThroughCache, CacheManagerReadThroughExt,
+        CacheGroup,
     };
 
     #[cfg(feature = "memory")]
@@ -69,6 +75,9 @@ pub mod prelude {
 
     #[cfg(feature = "bincode")]
     pub use crate::BincodeSerializer;
+
+    #[cfg(feature = "derive")]
+    pub use crate::CacheKey as DeriveCacheKey;
 }
 
 #[cfg(test)]
