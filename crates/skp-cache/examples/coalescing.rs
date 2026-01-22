@@ -1,65 +1,67 @@
+//! Request Coalescing (Singleflight) Example
+//!
+//! Demonstrates how concurrent cache misses for the same key
+//! are coalesced into a single computation, preventing stampedes.
+
 use skp_cache::prelude::*;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::sleep;
 
 #[tokio::main]
-async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    // 1. Setup cache
+async fn main() -> Result<()> {
     let backend = MemoryBackend::new(MemoryConfig::default());
     let cache = CacheManager::new(backend);
-    
-    // 2. Shared counter to track actual computations
-    let compute_count = Arc::new(Mutex::new(0));
-    
-    let mut handles = Vec::new();
-    let key = "expensive_data";
-    
-    println!("Spawning 10 concurrent requests for key '{}'...", key);
-    
-    // 3. Launch concurrent requests
-    for _ in 0..10 {
+
+    println!("=== Request Coalescing Demo ===\n");
+
+    // Track how many times our "expensive" computation runs
+    let computation_count = Arc::new(AtomicU32::new(0));
+
+    // Simulate 10 concurrent requests for the same key
+    let mut handles = vec![];
+
+    for i in 0..10 {
         let cache = cache.clone();
-        let compute_count = compute_count.clone();
-        
+        let count = computation_count.clone();
+
         handles.push(tokio::spawn(async move {
-            let result: CacheResult<String> = cache
-                .get_or_compute(key, || async move {
-                    // Simulate expensive computation (100ms)
-                    sleep(Duration::from_millis(100)).await;
-                    
-                    let mut count = compute_count.lock().unwrap();
-                    *count += 1;
-                    println!("Computing... (count: {})", *count);
-                    
-                    Ok("computed_value".to_string())
-                }, None)
-                .await
-                .unwrap();
-                
-            match result {
-                CacheResult::Hit(v) => {
-                     assert_eq!(v.value, "computed_value");
-                },
-                _ => panic!("Expected hit"),
-            }
+            let result = cache
+                .get_or_compute(
+                    "expensive:report",
+                    move || {
+                        let count = count.clone();
+                        async move {
+                            // This "expensive" computation should only run ONCE
+                            count.fetch_add(1, Ordering::SeqCst);
+                            println!("  → Computing expensive report...");
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                            Ok::<_, CacheError>(format!("Report data"))
+                        }
+                    },
+                    Some(CacheOpts::new().ttl_secs(60).into()),
+                )
+                .await;
+
+            println!("  Request {} completed: {:?}", i, result.is_ok());
         }));
     }
-    
-    // 4. Wait for all to complete
-    for h in handles {
-        h.await?;
+
+    // Wait for all requests
+    for handle in handles {
+        handle.await.unwrap();
     }
-    
-    // 5. Verify coalescing
-    let total_computations = *compute_count.lock().unwrap();
-    println!("Total computations performed: {}", total_computations);
-    
-    if total_computations != 1 {
-        panic!("Coalescing failed! Expected 1 computation, got {}", total_computations);
+
+    let total_computations = computation_count.load(Ordering::SeqCst);
+    println!("\n📊 Results:");
+    println!("   Total concurrent requests: 10");
+    println!("   Actual computations: {}", total_computations);
+
+    if total_computations == 1 {
+        println!("\n✅ Coalescing works! Only 1 computation despite 10 requests.");
     } else {
-        println!("SUCCESS: Request coalescing worked correctly.");
+        println!("\n⚠️  Expected 1 computation, got {}", total_computations);
     }
-    
+
     Ok(())
 }

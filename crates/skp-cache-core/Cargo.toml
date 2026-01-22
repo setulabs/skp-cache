@@ -14,6 +14,7 @@ json = ["serde_json"]
 msgpack = ["rmp-serde"]
 bincode = ["dep:bincode"]
 metrics = ["dep:metrics"]
+compression = ["dep:zstd"]
 
 [dependencies]
 async-trait.workspace = true
@@ -23,6 +24,12 @@ serde_json = { workspace = true, optional = true }
 rmp-serde = { workspace = true, optional = true }
 bincode = { workspace = true, optional = true }
 metrics = { workspace = true, optional = true }
+zstd = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
+criterion = "0.8.1"
+
+[[bench]]
+name = "serialization"
+harness = false

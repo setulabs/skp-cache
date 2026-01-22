@@ -123,6 +123,76 @@ impl CacheMetrics for NoopMetrics {
     fn record_size(&self, _size: usize, _memory_bytes: usize) {}
 }
 
+/// Metrics adapter using the `metrics` crate
+///
+/// Integrates with Prometheus, StatsD, and other exporters via the `metrics` ecosystem.
+///
+/// # Example
+/// ```ignore
+/// use skp_cache_core::MetricsCrateAdapter;
+/// 
+/// // Set up a metrics recorder (e.g., prometheus_exporter)
+/// // metrics::set_global_recorder(recorder);
+///
+/// let metrics = MetricsCrateAdapter::new("skp_cache");
+/// // Emits: skp_cache_hits_total, skp_cache_misses_total, etc.
+/// ```
+#[cfg(feature = "metrics")]
+#[derive(Debug, Clone)]
+pub struct MetricsCrateAdapter {
+    prefix: String,
+}
+
+#[cfg(feature = "metrics")]
+impl MetricsCrateAdapter {
+    /// Create a new adapter with the given metric name prefix
+    pub fn new(prefix: impl Into<String>) -> Self {
+        Self {
+            prefix: prefix.into(),
+        }
+    }
+
+    fn metric_name(&self, name: &str) -> String {
+        format!("{}_{}", self.prefix, name)
+    }
+}
+
+#[cfg(feature = "metrics")]
+impl CacheMetrics for MetricsCrateAdapter {
+    fn record_hit(&self, _key: &str, tier: CacheTier) {
+        metrics::counter!(self.metric_name("hits_total"), "tier" => tier.as_str()).increment(1);
+    }
+
+    fn record_miss(&self, _key: &str) {
+        metrics::counter!(self.metric_name("misses_total")).increment(1);
+    }
+
+    fn record_stale_hit(&self, _key: &str) {
+        metrics::counter!(self.metric_name("stale_hits_total")).increment(1);
+    }
+
+    fn record_latency(&self, operation: CacheOperation, duration: Duration) {
+        metrics::histogram!(
+            self.metric_name("operation_duration_seconds"),
+            "operation" => operation.as_str()
+        )
+        .record(duration.as_secs_f64());
+    }
+
+    fn record_eviction(&self, reason: EvictionReason) {
+        metrics::counter!(
+            self.metric_name("evictions_total"),
+            "reason" => reason.as_str()
+        )
+        .increment(1);
+    }
+
+    fn record_size(&self, size: usize, memory_bytes: usize) {
+        metrics::gauge!(self.metric_name("entries")).set(size as f64);
+        metrics::gauge!(self.metric_name("memory_bytes")).set(memory_bytes as f64);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,3 +224,4 @@ mod tests {
         metrics.record_latency(CacheOperation::Get, Duration::from_millis(1));
     }
 }
+

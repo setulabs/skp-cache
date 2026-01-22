@@ -15,3 +15,7 @@ pub use serializer::MsgPackSerializer;
 
 #[cfg(feature = "bincode")]
 pub use serializer::BincodeSerializer;
+
+#[cfg(feature = "metrics")]
+pub use metrics::MetricsCrateAdapter;
+

@@ -18,6 +18,7 @@ json = ["skp-cache-core/json"]
 msgpack = ["skp-cache-core/msgpack"]
 bincode = ["skp-cache-core/bincode"]
 metrics = ["skp-cache-core/metrics"]
+compression = ["skp-cache-core/compression"]
 
 [dependencies]
 skp-cache-core.workspace = true
@@ -30,6 +31,7 @@ dashmap.workspace = true
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 serde = { workspace = true }
+criterion = "0.8.1"
 
 [[example]]
 name = "redis_backend"
@@ -38,3 +40,7 @@ required-features = ["redis"]
 [[example]]
 name = "multi_tier"
 required-features = ["multitier"]
+
+[[bench]]
+name = "throughput"
+harness = false

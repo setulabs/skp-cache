@@ -45,6 +45,14 @@ pub enum CacheError {
     #[error("internal error: {0}")]
     Internal(String),
 
+    /// Compression failed
+    #[error("compression error: {0}")]
+    Compression(String),
+
+    /// Decompression failed
+    #[error("decompression error: {0}")]
+    Decompression(String),
+
     /// Timeout
     #[error("operation timed out")]
     Timeout,

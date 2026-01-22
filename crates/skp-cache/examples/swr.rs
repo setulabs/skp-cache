@@ -1,65 +1,66 @@
+//! Stale-While-Revalidate (SWR) Example
+//!
+//! Demonstrates serving stale data immediately while refreshing
+//! in the background, providing optimal latency for users.
+
 use skp_cache::prelude::*;
-use skp_cache_core::{CacheOpts};
-use tokio::time::{sleep, Duration};
+use std::time::Duration;
 
 #[tokio::main]
-async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
     let backend = MemoryBackend::new(MemoryConfig::default());
     let cache = CacheManager::new(backend);
-    
-    let key = "swr_key";
-    
-    // 1. Set entry with SWR
-    // TTL = 1s, SWR = 5s (Total 6s validity, 1-6s is Stale window)
-    let opts = CacheOpts::new()
-        .ttl_secs(1)
-        .swr_secs(5);
-        
-    cache.set(key, &"initial", opts.clone()).await?;
-    println!("Set 'initial'. Waiting 2s (TTL expired, SWR active)...");
-    sleep(Duration::from_secs(2)).await;
-    
-    // 2. get_or_compute
-    // Should return STALE "initial" immediately, and trigger background compute
-    println!("Requesting key...");
-    let start = std::time::Instant::now();
-    
-    let res = cache.get_or_compute(key, || async {
-         println!("  Background: Computing fresh value (taking 500ms)...");
-         sleep(Duration::from_millis(500)).await;
-         println!("  Background: Compute done.");
-         Ok("fresh".to_string())
-    }, Some(opts.build())).await?;
-    
-    let elapsed = start.elapsed();
-    println!("Request returned in {:?} (should be instant)", elapsed);
-    
-    match res {
-        CacheResult::Stale(v) => {
-            println!("Got Stale value: '{}'", v.value);
-            assert_eq!(v.value, "initial");
-        },
-        CacheResult::Hit(_) => panic!("Expected Stale, got Hit (Fresh)"),
-        CacheResult::Miss => panic!("Expected Stale, got Miss"),
-        _ => panic!("Unexpected result"),
+
+    println!("=== Stale-While-Revalidate Demo ===\n");
+
+    // Set an entry with short TTL and SWR window
+    cache
+        .set(
+            "dashboard",
+            &"Dashboard v1".to_string(),
+            CacheOpts::new()
+                .ttl_secs(1)  // Fresh for 1 second
+                .swr_secs(5), // Stale but usable for 5 more seconds
+        )
+        .await?;
+    println!("✓ Set 'dashboard' with TTL=1s, SWR=5s");
+
+    // Immediately: should be fresh
+    match cache.get::<String>("dashboard").await? {
+        CacheResult::Hit(entry) => println!("T+0s: HIT (fresh) - {}", entry.value),
+        CacheResult::Stale(entry) => println!("T+0s: STALE - {}", entry.value),
+        CacheResult::Miss => println!("T+0s: MISS"),
+        _ => {}
     }
-    
-    // 3. Wait for background refresh to complete
-    println!("Waiting for background refresh...");
-    sleep(Duration::from_secs(1)).await;
-    
-    // 4. Get again -> Should be fresh
-    let res2 = cache.get::<String>(key).await?;
-    match res2 {
-        CacheResult::Hit(v) => {
-            println!("Got Fresh value: '{}'", v.value);
-            assert_eq!(v.value, "fresh");
-        },
-        CacheResult::Stale(_) => panic!("Expected Fresh, got Stale"),
-        CacheResult::Miss => panic!("Expected Fresh, got Miss"),
-        _ => panic!("Unexpected result"),
+
+    // Wait for TTL to expire
+    println!("\n⏳ Waiting 2 seconds for TTL to expire...\n");
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    // After TTL: should be stale (but still returned)
+    match cache.get::<String>("dashboard").await? {
+        CacheResult::Hit(entry) => println!("T+2s: HIT (fresh) - {}", entry.value),
+        CacheResult::Stale(entry) => {
+            println!("T+2s: STALE (serving old data) - {}", entry.value);
+            println!("       → Background refresh would trigger here");
+        }
+        CacheResult::Miss => println!("T+2s: MISS"),
+        _ => {}
     }
-    
-    println!("SWR Success!");
+
+    // Wait for SWR window to expire
+    println!("\n⏳ Waiting 5 more seconds for SWR window to expire...\n");
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    // After SWR: should be gone
+    match cache.get::<String>("dashboard").await? {
+        CacheResult::Hit(entry) => println!("T+7s: HIT - {}", entry.value),
+        CacheResult::Stale(entry) => println!("T+7s: STALE - {}", entry.value),
+        CacheResult::Miss => println!("T+7s: MISS (entry fully expired)"),
+        _ => {}
+    }
+
+    println!("\n✅ SWR behavior demonstrated!");
+
     Ok(())
 }

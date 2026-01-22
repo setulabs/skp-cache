@@ -47,6 +47,9 @@ bb8-redis = "0.26.0"
 # Metrics
 metrics = "0.24.3"
 
+# Compression
+zstd = "0.13.3"
+
 # Testing
 tokio-test = "0.4.5"
 

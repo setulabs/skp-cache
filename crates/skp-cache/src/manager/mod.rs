@@ -317,11 +317,26 @@ where
         
         self.metrics
             .record_latency(CacheOperation::Delete, start.elapsed());
-        Ok(result)
+        Ok(result.0)
+    }
+
+    /// Invalidate a key and all its dependents (cascade invalidation)
+    /// 
+    /// Returns the number of entries invalidated
+    pub async fn invalidate(&self, key: impl CacheKey) -> Result<u64> {
+        let full_key = self.full_key(&key.full_key());
+        let start = Instant::now();
+        
+        let result = self.invalidate_recursive(&full_key).await?;
+        
+        self.metrics
+            .record_latency(CacheOperation::Invalidate, start.elapsed());
+        Ok(result.1)
     }
 
     /// Recursive invalidation of dependents
-    async fn invalidate_recursive(&self, key: &str) -> Result<bool> {
+    /// Returns (initial_key_deleted, total_count)
+    async fn invalidate_recursive(&self, key: &str) -> Result<(bool, u64)> {
         let mut queue = VecDeque::new();
         queue.push_back(key.to_string());
         let mut visited = HashSet::new();
@@ -329,6 +344,7 @@ where
         
         let mut initial_deleted = false;
         let mut first = true;
+        let mut count = 0u64;
         
         while let Some(k) = queue.pop_front() {
              // Get dependents first
@@ -341,12 +357,15 @@ where
              }
              // Delete
              let deleted = self.backend.delete(&k).await?;
+             if deleted {
+                 count += 1;
+             }
              if first {
                  initial_deleted = deleted;
                  first = false;
              }
         }
-        Ok(initial_deleted)
+        Ok((initial_deleted, count))
     }
 
     /// Check if key exists in cache
