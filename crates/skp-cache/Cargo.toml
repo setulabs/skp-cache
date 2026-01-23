@@ -32,7 +32,7 @@ rand.workspace = true
 serde.workspace = true
 dashmap.workspace = true
 async-trait.workspace = true
-skp-cache-derive = { path = "../skp-cache-derive", optional = true }
+skp-cache-derive = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
