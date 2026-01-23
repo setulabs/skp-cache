@@ -58,4 +58,5 @@ skp-cache-core = { path = "crates/skp-cache-core", version = "0.1.0" }
 skp-cache-storage = { path = "crates/skp-cache-storage", version = "0.1.0" }
 skp-cache-http = { path = "crates/skp-cache-http", version = "0.1.0" }
 skp-cache-axum = { path = "crates/skp-cache-axum", version = "0.1.0" }
+skp-cache-derive = { path = "crates/skp-cache-derive", version = "0.1.0" }
 skp-cache = { path = "crates/skp-cache", version = "0.1.0" }
