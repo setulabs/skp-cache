@@ -5,14 +5,14 @@ members = [
     "crates/skp-cache-storage",
     "crates/skp-cache",
     "crates/skp-cache-http",
-    "crates/skp-cache-axum", "crates/skp-cache-derive",
+    "crates/skp-cache-axum",
+    "crates/skp-cache-derive",
 ]
-
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-authors = ["Setu Labs"]
+authors = ["Sachin Kumar Pal<sachinkumar@setulab.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/setulabs/skp-cache"
 keywords = ["cache", "redis", "async", "caching"]
@@ -54,8 +54,8 @@ zstd = "0.13.3"
 tokio-test = "0.4.5"
 
 # Internal crates
-skp-cache-core = { path = "crates/skp-cache-core" }
-skp-cache-storage = { path = "crates/skp-cache-storage" }
-skp-cache-http = { path = "crates/skp-cache-http" }
-skp-cache-axum = { path = "crates/skp-cache-axum" }
-skp-cache = { path = "crates/skp-cache" }
+skp-cache-core = { path = "crates/skp-cache-core", version = "0.1.0" }
+skp-cache-storage = { path = "crates/skp-cache-storage", version = "0.1.0" }
+skp-cache-http = { path = "crates/skp-cache-http", version = "0.1.0" }
+skp-cache-axum = { path = "crates/skp-cache-axum", version = "0.1.0" }
+skp-cache = { path = "crates/skp-cache", version = "0.1.0" }

@@ -2,9 +2,13 @@
 name = "skp-cache-axum"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+authors.workspace = true
 description = "Axum caching middleware for skp-cache"
+keywords = ["cache", "axum", "middleware", "http"]
+categories = ["caching", "web-programming"]
 
 [dependencies]
 axum = "0.8.8"
@@ -17,9 +21,9 @@ bytes = "1.11.0"
 tokio = { workspace = true }
 
 # Workspace dependencies
-skp-cache = { workspace = true }
-skp-cache-core = { workspace = true }
-skp-cache-http = { workspace = true }
+skp-cache.workspace = true
+skp-cache-core.workspace = true
+skp-cache-http.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
